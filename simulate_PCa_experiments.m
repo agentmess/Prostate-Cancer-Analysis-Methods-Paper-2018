@@ -1,6 +1,6 @@
 clear all
 
-quick_test = 0;
+quick_test = 1;
 
 % default experiment values
 exp.R1P = 1/30;  exp.R1L =1/25;  exp.kPL = 0.02; exp.std_noise = 0.004; exp.Tarrival = 4; exp.Tbolus = 8;
@@ -18,10 +18,6 @@ B_lb = 6 /4; B_ub = 10 /4;
 % Tarrival_est = 1.25; Tbolus_est = 16; Rinj_est = 0.06; % boxcar, flips = 2
 % Tarrival_est = 2; Tbolus_est = 17; Rinj_est = 0.06; % boxcar, flips = 3
 
-
-% % estimates derived from noiseless fits for boxcar model??
-
-% input bolus shape?
 params_all = {'kPL', 'R1L', 'R1P', 'Rinj', 'Tarrival', 'A','B'};
 
 % Options: Fix R1L, Fix Tarrive, Tbolus
@@ -58,15 +54,18 @@ fit_desc = {'fitall', ...
 
 % Models: inputless, boxcar input, gamma variate input [not sure how to put in Tbolus though B = Tbolus/2 A=1 ??  FWHM of gamma function?]
 fitting_model = {@fit_kPL, @fit_kPL_withinput, @fit_kPL_withgammainput};
+% these correspond to {input-less fitting, fitting with boxcar input, fitting with gamma-variate input shape}
 
 % test multiple fitting options
 % Ifitting_mode
-for Ifit_params = [1:6] %1:length(fit_params)  % choose which parameter combinations to fit
-    for Ifitting_model = [1,3] %1:length(fitting_model)  % choose which fitting models to apply
+for Ifit_params = 2%[2,6] %1:length(fit_params)  % choose which parameter combinations (fit_params) to fit
+    for Ifitting_model = [1]  %1:length(fitting_model)  % choose which fitting models (fitting_model) to apply
         
         if Ifit_params>2 && Ifitting_model ==1
+            % input-less fitting (fit_kPL) doesn't include bolus parameters
             continue
         end
+
         % we'll assume best case of a good initial guess, then perturb in further
         % simulations
         
@@ -87,7 +86,7 @@ for Ifit_params = [1:6] %1:length(fit_params)  % choose which parameter combinat
             end
         end
         
-        for flip_scheme = [1:4]% [1:4] % choose which flip angle scheme to apply
+        for flip_scheme = [1,4]% [1:4] % choose which flip angle scheme (flip_scheme) to apply
             
             clear flips_all flips
             
@@ -144,7 +143,10 @@ for Ifit_params = [1:6] %1:length(fit_params)  % choose which parameter combinat
             exp_desc = [func2str(fitting_model{Ifitting_model}) '_' fit_desc{Ifit_params} '_' flip_desc];
             
             tic
-            [results(Ifit_params, Ifitting_model, flip_scheme) hdata hsim] = HP_montecarlo_evaluation( acq, fitting, exp );
+
+%            [results(Ifit_params, Ifitting_model, flip_scheme) hdata hsim] = HP_montecarlo_evaluation( acq, fitting, exp );
+
+            [results(Ifit_params, Ifitting_model, flip_scheme) hdata hsim] = HP_montecarlo_evaluation2( acq, fitting, exp );
             toc
             
             set(hsim,'Name', exp_desc);
