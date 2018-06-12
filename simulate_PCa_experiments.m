@@ -3,12 +3,16 @@ clear all
 quick_test = 0;
 
 % default experiment values
-exp.R1P = 1/30;  exp.R1L =1/25;  exp.kPL = 0.02; exp.std_noise = 0.004; exp.Tarrival = 4; exp.Tbolus = 12;
+exp.R1P = 1/30;  exp.R1L =1/25;  exp.kPL = 0.02; exp.std_noise = 0.004; exp.Tarrival = 4; exp.Tbolus = 8;
 %exp.std_noise = 0; %noiseless test
 R1P_est = 1/30; R1L_est = 1/25; kPL_est = .02;
+R1P_lb = 1/40;  R1P_ub = 1/15;
+R1L_lb = 1/35;  R1L_ub = 1/15; % +- 10 s
 
 % good for gammainput:
-Rinj_est = 1; Tarrival_est = 4;  A_est = 4; Tbolus_est = 12; B_est = Tbolus_est/4;   % A - shape, B - scale (~ Tbolus/4 for A=4...)
+Rinj_est = 1; Tarrival_est = 4;  A_est = 4; Tbolus_est = 8; B_est = Tbolus_est/4;   % A - shape, B - scale (~ Tbolus/4 for A=4...)
+Tarrival_lb = 0; Tarrival_ub = 12;
+B_lb = 6 /4; B_ub = 10 /4;
 
 % % for boxcar input
 % Tarrival_est = 1.25; Tbolus_est = 16; Rinj_est = 0.06; % boxcar, flips = 2
@@ -18,18 +22,18 @@ Rinj_est = 1; Tarrival_est = 4;  A_est = 4; Tbolus_est = 12; B_est = Tbolus_est/
 % % estimates derived from noiseless fits for boxcar model??
 
 % input bolus shape?
-params_all = {'kPL', 'R1L', 'R1P', 'Rinj', 'Tarrival', 'Tbolus', 'A','B'};
+params_all = {'kPL', 'R1L', 'R1P', 'Rinj', 'Tarrival', 'A','B'};
 
 % Options: Fix R1L, Fix Tarrive, Tbolus
 % realistically, need to fit kPL and Rinj, but for simulation purposes
 % maybe too much
-fit_params = {{'kPL','R1L', 'Rinj', 'Tarrival', 'Tbolus', 'B'}, ...  % fit everything
-    {'kPL', 'Rinj', 'Tarrival', 'Tbolus','B'}, ...  % fix R1L, fit bolus
-    {'kPL', 'Rinj', 'Tbolus', 'B'}, ...  % fix R1L, fit bolus duration - hard
-    {'kPL', 'Rinj', 'Tarrival'}, ...  % fix R1L, fit bolus arrival - looks easier
-    {'kPL','R1L', 'Rinj'}, ... % fix entire bolus, but fit amplitude (Rinj), maybe add Tarrival for timing?
-    {'kPL', 'Rinj'}, ...
-        {'kPL'}}; % fix R1L and bolus characteristics
+fit_params = {{'kPL','R1L', 'Rinj', 'Tarrival', 'B'}, ...  % 1 - fit everything
+    {'kPL', 'Rinj', 'Tarrival','B'}, ...  % 2 - fix R1L, fit bolus
+    {'kPL', 'Rinj', 'B'}, ...  % 3- fix R1L, fit bolus duration - hard
+    {'kPL', 'Rinj', 'Tarrival'}, ...  % 4- fix R1L, fit bolus arrival - looks easier
+    {'kPL','R1L', 'Rinj'}, ... % 5- fix entire bolus, but fit amplitude (Rinj)
+    {'kPL', 'Rinj'}, ... % 6 -fix bolus except rate, fix R1L
+        {'kPL'}}; % 7- fix R1L and ALL bolus characteristics
 
 fit_desc = {'fitall', ...
     'fixR1L',...
@@ -57,7 +61,7 @@ fitting_model = {@fit_kPL, @fit_kPL_withinput, @fit_kPL_withgammainput};
 
 % test multiple fitting options
 % Ifitting_mode
-for Ifit_params = [2,6] %1:length(fit_params)  % choose which parameter combinations to fit
+for Ifit_params = [1:6] %1:length(fit_params)  % choose which parameter combinations to fit
     for Ifitting_model = [1,3] %1:length(fitting_model)  % choose which fitting models to apply
         
         if Ifit_params>2 && Ifitting_model ==1
@@ -71,12 +75,19 @@ for Ifit_params = [2,6] %1:length(fit_params)  % choose which parameter combinat
         for Iparams = 1:length(params_all)
             if find(strcmp(fit_params{Ifit_params}, params_all{Iparams}))
                 eval(['params_est.(params_all{Iparams}) =' params_all{Iparams} '_est;'])
+                if exist([params_all{Iparams} '_lb'])
+                    eval(['params_est.([params_all{Iparams} ''_lb'']) =' params_all{Iparams} '_lb;'])
+                end
+                if exist([params_all{Iparams} '_ub'])
+                    eval(['params_est.([params_all{Iparams} ''_ub'']) =' params_all{Iparams} '_ub;'])
+                end
+                
             else
                 eval(['params_fixed.(params_all{Iparams}) =' params_all{Iparams} '_est;'])
             end
         end
         
-        for flip_scheme = [2,4]% [1:4] % choose which flip angle scheme to apply
+        for flip_scheme = [1:4]% [1:4] % choose which flip angle scheme to apply
             
             clear flips_all flips
             
@@ -134,10 +145,13 @@ for Ifit_params = [2,6] %1:length(fit_params)  % choose which parameter combinat
             
             tic
             [results(Ifit_params, Ifitting_model, flip_scheme) hdata hsim] = HP_montecarlo_evaluation( acq, fitting, exp );
-            set(hsim,'Name', exp_desc);
-            figure(hsim)
-            print([ exp_desc], '-dpdf')
             toc
+            
+            set(hsim,'Name', exp_desc);
+            if ~quick_test
+                figure(hsim)
+                print([ exp_desc], '-dpdf')
+            end
             
         end
     end
