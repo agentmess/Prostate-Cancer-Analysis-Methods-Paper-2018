@@ -1,6 +1,6 @@
 clear all
 
-quick_test = 1;
+quick_test = 0;
 
 % default experiment values
 exp.R1P = 1/30;  exp.R1L =1/25;  exp.kPL = 0.02; exp.std_noise = 0.004; exp.Tarrival = 4; exp.Tbolus = 8;
@@ -58,8 +58,8 @@ fitting_model = {@fit_kPL, @fit_kPL_withinput, @fit_kPL_withgammainput};
 
 % test multiple fitting options
 % Ifitting_mode
-for Ifit_params = 2%[2,6] %1:length(fit_params)  % choose which parameter combinations (fit_params) to fit
-    for Ifitting_model = [1]  %1:length(fitting_model)  % choose which fitting models (fitting_model) to apply
+for Ifit_params = [1:6] %1:length(fit_params)  % choose which parameter combinations (fit_params) to fit
+    for Ifitting_model = [1,3]  %1:length(fitting_model)  % choose which fitting models (fitting_model) to apply
         
         if Ifit_params>2 && Ifitting_model ==1
             % input-less fitting (fit_kPL) doesn't include bolus parameters
@@ -86,7 +86,7 @@ for Ifit_params = 2%[2,6] %1:length(fit_params)  % choose which parameter combin
             end
         end
         
-        for flip_scheme = [1,4]% [1:4] % choose which flip angle scheme (flip_scheme) to apply
+        for flip_scheme = [4]% [1:4] % choose which flip angle scheme (flip_scheme) to apply
             
             clear flips_all flips
             
