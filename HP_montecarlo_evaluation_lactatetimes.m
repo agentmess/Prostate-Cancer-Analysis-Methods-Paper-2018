@@ -1,12 +1,11 @@
-function [results, hdata, hsim ] = HP_montecarlo_evaluation2( acq, fitting, exp )
-% [ results, hdata, hsim ] = HP_montecarlo_evaluation( acq, fitting, exp );
+function [results, hfig ] = HP_montecarlo_evaluation_lactatetimes( acq, fitting, exp )
+% [ results, hfig ] = HP_montecarlo_evaluation_lactatetimes( acq, fitting, exp );
 %
 % Evaluate hyperpolarized carbon-13 MRI experiment using Monte Carlo
 % simulations.
-% Evaluation is performed considering a given set of acquisition
-% parameters and kinetic modeling method.  A calibrated Area-under-curve ratio
-% (cAUCratio) derived in Hill et al. PLoS One, doi:
-% 10.1371/journal.pone.0071996 , is always computed as a reference.
+% Specifically looking at lactate time model-free metrics:
+% AUCratio - area-under-curve ratio, Hill et al. PLoS One, doi: 10.1371/journal.pone.0071996
+% TTP - lactate time to peak, Daniels et al, NMR In Biomed, doi: 10.1002/nbm.3468 
 %
 % INPUTS:
 %   acq - structure containing acquisition parameters, including
@@ -18,7 +17,7 @@ function [results, hdata, hsim ] = HP_montecarlo_evaluation2( acq, fitting, exp 
 %
 % OUTPUTS:
 %   results - structure containing summary of results
-%   hdata, hsim - handles to figures from function
+%   hfig - handles to figures from function
 %
 % (c) 2017 The Regents of the University of California
 % All Rights Reserved.
@@ -59,8 +58,8 @@ R1 = [exp.R1P, exp.R1L]; kPL = exp.kPL; std_noise = exp.std_noise;
 Tbolus = exp.Tbolus;
 
 % experiment simulation ranges
-exp.kPL_min = 0; exp.kPL_max = 0.04;    % approx kpL max in human studies
-exp.std_noise_min = 0; exp.std_noise_max = 0.01;
+exp.kPL_min = 0.005; exp.kPL_max = kPL*2;    % approx kpL max in human studies
+exp.std_noise_min = 0; exp.std_noise_max = std_noise*2;
 exp.Tarrival_min = 0; exp.Tarrival_max = 8;
 exp.Tbolus_min = 10; exp.Tbolus_max = 14;
 exp.R1L_min = 1/35; exp.R1L_max = 1/15;
@@ -85,7 +84,8 @@ results.input_function = input_function;
 
 Mxy = simulate_2site_model(Mz0, R1, [kPL 0], acq.flips, acq.TR, input_function);
 AUC_predicted = compute_AUCratio(Mxy);
-MTL_predicted = compute_TTP(Mxy(2,:), acq.TR);
+TTP_predicted = compute_TTP(Mxy(2,:), acq.TR);
+MTL_predicted = compute_mean_time(Mxy(2,:), acq.TR);
 
 %% sample data
 
@@ -93,32 +93,33 @@ MTL_predicted = compute_TTP(Mxy(2,:), acq.TR);
 results.sample_data = Mxy + randn(size(Mxy))*std_noise;
 results.sample_data_time = t;
 
-hdata = figure;
-subplot(221) , plot(t, squeeze(results.sample_data(1,:))), title('sample simulated pyruvate')
+hfig = figure;
+subplot(251) , plot(t, squeeze(results.sample_data(1,:))), title('sample simulated pyruvate')
 xlabel('time (s)'), ylabel('Signal')
-subplot(222) , plot(t, squeeze(results.sample_data(2,:))), title('sample simulated lactate')
+subplot(256) , plot(t, squeeze(results.sample_data(2,:))), title('sample simulated lactate')
 xlabel('time (s)'), ylabel('Signal')
 
 %% setup for plots
-hsim = figure;
-Iplot = 1;
+% hsim = figure;
+% Iplot = 1;
 
 
 %% KPL test
 
 kPL_test = linspace(exp.kPL_min, exp.kPL_max, Nexp_values).';
 
-kPL_fit = zeros(length(kPL_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit;
+kPL_fit = zeros(length(kPL_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit; TTP_fit = kPL_fit;
 
 for Itest = 1:length(kPL_test)
     Mxy = simulate_2site_model(Mz0, R1, [kPL_test(Itest) 0], acq.flips, acq.TR, input_function);
-    [kPL_fit(Itest,:), AUC_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise, params_fixed, params_est);
+    [kPL_fit(Itest,:), AUC_fit(Itest,:), TTP_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise, params_fixed, params_est);
     
     AUC_predicted_test(Itest) = compute_AUCratio(Mxy);
-    MTL_predicted_test(Itest) = compute_TTP(Mxy(2,:), acq.TR);
+    MTL_predicted_test(Itest) = compute_mean_time(Mxy(2,:), acq.TR);
+    TTP_predicted_test(Itest) = compute_TTP(Mxy(2,:), acq.TR);
 end
 
-
+if 0
 subplot(Nplot1, Nplot2, Iplot); Iplot = Iplot+1;
 %[~,kPL_mean,AUC_mean,kPL_std,AUC_std]=plot_with_mean_and_std(kPL_test, kPL_fit./repmat(kPL_test(:),[1,NMC]),AUC_fit./repmat(AUC_predicted_test(:), [1, NMC]));
 %ylim(ratio_limits)
@@ -141,27 +142,54 @@ results.kPL_test.kPL_std_bias = std(kPL_mean) ;  % accuracy measurement
 results.kPL_test.AUC_avg_error = mean(AUC_std);  % precision measurement
 results.kPL_test.AUC_avg_bias = mean(abs(AUC_mean));  % accuracy measurement
 results.kPL_test.AUC_std_bias = std(AUC_mean);  % accuracy measurement
-
+end
 %% add plot of kPL vs AUC and MTL
-figure
-subplot(231)
-plot(kPL_test, (kPL_fit - kPL)/kPL, '.')
-ylim([-1.5 1.5])
-subplot(232)
-plot(kPL_test, (AUC_fit - AUC_predicted)/AUC_predicted, '.')
-ylim([-1.5 1.5])
-subplot(233)
-plot(kPL_test, (MTL_fit - MTL_predicted)/MTL_predicted, '.')
-ylim([-1.5 1.5])
-subplot(234)
-plot(kPL_test, (kPL_fit - 0), '.')
-subplot(235)
-plot(kPL_test, (AUC_fit - 0), '.')
-subplot(236)
-plot(kPL_test, (MTL_fit - 0), '.')
+%figure
+% subplot(231)
+% plot(kPL_test, (kPL_fit - kPL)/kPL, '.')
+% ylim([-1.5 1.5])
+% subplot(232)
+% plot(kPL_test, (AUC_fit - AUC_predicted)/AUC_predicted, '.')
+% ylim([-1.5 1.5])
+% subplot(233)
+% plot(kPL_test, (MTL_fit - MTL_predicted)/MTL_predicted, '.')
+% ylim([-1.5 1.5])
+% subplot(241)
+% subplot(242)
+% plot(kPL_test, AUC_predicted_test, '-')
+% subplot(243)
+% plot(kPL_test, TTP_predicted_test, '-')
+% subplot(244)
+% plot(kPL_test, MTL_predicted_test, '-')
+
+subplot(152)
+shadedErrorBar(kPL_test.', (kPL_fit - 0).',{@mean,@std}); 
+hold on
+plot(kPL_test, kPL_test, 'r--')
+hold off
+xlabel('k_{PL} (1/s)'), ylabel('input-less k_{PL} fit (1/s)')
+subplot(153)
+shadedErrorBar(kPL_test.', (AUC_fit - 0).',{@mean,@std}); 
+hold on
+plot(kPL_test, AUC_predicted_test, 'r--')
+hold off
+xlabel('k_{PL} (1/s)'), ylabel('AUC_{ratio}')
+subplot(154)
+shadedErrorBar(kPL_test.', (TTP_fit - 0).',{@mean,@std}); 
+hold on
+plot(kPL_test, TTP_predicted_test, 'r--')
+hold off
+xlabel('k_{PL} (1/s)'), ylabel('TTP (s)')
+subplot(155)
+shadedErrorBar(kPL_test.', (MTL_fit - 0).',{@mean,@std}); 
+hold on
+plot(kPL_test, MTL_predicted_test, 'r--')
+hold off
+xlabel('k_{PL} (1/s)'), ylabel('mean lactate time (s)')
+
 % normalize AUC/MTL by slope (e.g. sensitivity to change in kPL)
 
-
+return
 
 figure(hsim)
 
@@ -169,11 +197,11 @@ figure(hsim)
 
 std_noise_test = linspace(exp.std_noise_min, exp.std_noise_max, Nexp_values).';
 
-kPL_fit = zeros(length(std_noise_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit;
+kPL_fit = zeros(length(kPL_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit; TTP_fit = kPL_fit;
 Mxy = simulate_2site_model(Mz0, R1, [kPL 0], acq.flips, acq.TR, input_function);
 
 for Itest = 1:length(std_noise_test)
-    [kPL_fit(Itest,:), AUC_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise_test(Itest), params_fixed, params_est);
+    [kPL_fit(Itest,:), AUC_fit(Itest,:), TTP_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise_test(Itest), params_fixed, params_est);
     
 end
 
@@ -197,7 +225,7 @@ results.noise_test.AUC_std_bias = std(AUC_mean);  % accuracy measurement
 
 Tarrival_test= linspace(exp.Tarrival_min, exp.Tarrival_max, Nexp_values);
 
-kPL_fit = zeros(length(Tarrival_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit;
+kPL_fit = zeros(length(kPL_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit; TTP_fit = kPL_fit;
 
 for Itest = 1:length(Tarrival_test)
     t_test = t_input - (Tarrival_test(Itest)-exp.Tarrival);
@@ -208,7 +236,7 @@ for Itest = 1:length(Tarrival_test)
     %     figure(99),  plot(t, Mxy), pause
     %
     
-    [kPL_fit(Itest,:), AUC_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise, params_fixed, params_est);
+    [kPL_fit(Itest,:), AUC_fit(Itest,:), TTP_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise, params_fixed, params_est);
     
 end
 
@@ -230,8 +258,7 @@ results.Tarrival_test.AUC_std_bias = std(AUC_mean);  % accuracy measurement
 
 Tbolus_test = linspace(exp.Tbolus_min, exp.Tbolus_max, Nexp_values);
 
-
-kPL_fit = zeros(length(Tbolus_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit;
+kPL_fit = zeros(length(kPL_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit; TTP_fit = kPL_fit;
 
 for Itest = 1:length(Tbolus_test)
     t_test = t*Tbolus/Tbolus_test(Itest);  % stretch/squeeze to modulate bolus
@@ -242,7 +269,7 @@ for Itest = 1:length(Tbolus_test)
     %     figure(99),  plot(t, Mxy), pause
     %
     
-    [kPL_fit(Itest,:), AUC_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise, params_fixed, params_est);
+    [kPL_fit(Itest,:), AUC_fit(Itest,:), TTP_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise, params_fixed, params_est);
     
 end
 
@@ -265,13 +292,13 @@ results.Tbolus_test.AUC_std_bias = std(AUC_mean);  % accuracy measurement
 
 R1L_test = linspace(exp.R1L_min, exp.R1L_max, Nexp_values);
 
-kPL_fit = zeros(length(R1L_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit;
+kPL_fit = zeros(length(kPL_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit; TTP_fit = kPL_fit;
 
 for Itest = 1:length(R1L_test)
     
     Mxy = simulate_2site_model(Mz0, [R1(1), R1L_test(Itest)], [kPL 0], acq.flips, acq.TR, input_function);
     
-    [kPL_fit(Itest,:), AUC_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise, params_fixed, params_est);
+    [kPL_fit(Itest,:), AUC_fit(Itest,:), TTP_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise, params_fixed, params_est);
     
 end
 
@@ -292,13 +319,13 @@ results.R1L_test.AUC_std_bias = std(AUC_mean);  % accuracy measurement
 
 R1P_test = linspace(exp.R1P_min, exp.R1P_max, Nexp_values);
 
-kPL_fit = zeros(length(R1P_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit;
+kPL_fit = zeros(length(kPL_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit; TTP_fit = kPL_fit;
 
 for Itest = 1:length(R1P_test)
     
     Mxy = simulate_2site_model(Mz0, [R1P_test(Itest), R1(2)], [kPL 0], acq.flips, acq.TR, input_function);
     
-    [kPL_fit(Itest,:), AUC_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise, params_fixed, params_est);
+    [kPL_fit(Itest,:), AUC_fit(Itest,:), TTP_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise, params_fixed, params_est);
     
 end
 
@@ -320,12 +347,12 @@ results.R1P_test.AUC_std_bias = std(AUC_mean);  % accuracy measurement
 
 B1error_test = linspace(exp.B1error_min, exp.B1error_max, Nexp_values);
 
-kPL_fit = zeros(length(B1error_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit;
+kPL_fit = zeros(length(kPL_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit; TTP_fit = kPL_fit;
 
 for Itest = 1:length(B1error_test)
     Mxy = simulate_2site_model(Mz0, R1, [kPL 0], acq.flips * (1+B1error_test(Itest)), acq.TR, input_function);
     
-    [kPL_fit(Itest,:), AUC_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise, params_fixed, params_est);
+    [kPL_fit(Itest,:), AUC_fit(Itest,:), TTP_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips, NMC, std_noise, params_fixed, params_est);
     
 end
 
@@ -347,14 +374,15 @@ results.B1error_test.AUC_std_bias = std(AUC_mean);  % accuracy measurement
 
 B1diff_test = linspace(exp.B1diff_min, exp.B1diff_max, Nexp_values);
 
-kPL_fit = zeros(length(B1diff_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit;
-clear AUC_predicted_test MTL_predicted_test
+kPL_fit = zeros(length(kPL_test), NMC); AUC_fit = kPL_fit; MTL_fit = kPL_fit; TTP_fit = kPL_fit;
+clear AUC_predicted_test MTL_predicted_test TTP_predicted_test
 
 for Itest = 1:length(B1diff_test)
     Mxy = simulate_2site_model(Mz0, R1, [kPL 0], acq.flips * (1+B1diff_test(Itest)), acq.TR, input_function);
     
-    [kPL_fit(Itest,:), AUC_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips* (1+B1diff_test(Itest)), NMC, std_noise, params_fixed, params_est);
+    [kPL_fit(Itest,:), AUC_fit(Itest,:), TTP_fit(Itest,:), MTL_fit(Itest,:)] = fitting_simulation(fit_fcn,Mxy, acq.TR, acq.flips* (1+B1diff_test(Itest)), NMC, std_noise, params_fixed, params_est);
     AUC_predicted_test(Itest) = compute_AUCratio(Mxy);
+    TTP_predicted_test(Itest) = compute_TTP(Mxy(2,:), acq.TR);
     MTL_predicted_test(Itest) = compute_mean_time(Mxy(2,:), acq.TR);
 end
 
@@ -392,9 +420,9 @@ plot(x, Y1, 'b-', x, Y2, 'g-', x, Y3, 'm-', ...  % means
 end
 
 
-function [kPL_fit, AUC_fit, MTL_fit] = fitting_simulation(fit_fcn, Mxy, TR, flips, NMC, std_noise, params_fixed, params_est);
+function [kPL_fit, AUC_fit, TTP_fit, MTL_fit] = fitting_simulation(fit_fcn, Mxy, TR, flips, NMC, std_noise, params_fixed, params_est);
 
-kPL_fit = zeros(1,NMC); AUC_fit = zeros(1,NMC); MTL_fit = zeros(1,NMC);
+kPL_fit = zeros(1,NMC); AUC_fit = zeros(1,NMC); MTL_fit = zeros(1,NMC); TTP_fit = zeros(1,NMC);
 for n = 1:NMC
     Sn = Mxy + randn(size(Mxy))*std_noise;
     
@@ -404,8 +432,8 @@ for n = 1:NMC
     
     AUC_fit(n) = compute_AUCratio(Sn);
     
-%    MTL_fit(n) = compute_mean_time(Sn(2,:), TR);
-    MTL_fit(n) = compute_TTP(Sn(2,:), TR);
+    MTL_fit(n) = compute_mean_time(Sn(2,:), TR);
+    TTP_fit(n) = compute_TTP(Sn(2,:), TR);
 end
 
 end

@@ -1,10 +1,19 @@
 clear all
 
-quick_test = 1;
+quick_test = 0;
 
-% default experiment values
+if 1
+% default experiment values from prostate cancer studies
+expname = 'lowSNR_lowkPL';
 exp.R1P = 1/30;  exp.R1L =1/25;  exp.kPL = 0.02; exp.std_noise = 0.004; exp.Tarrival = 4; exp.Tbolus = 8;
 %exp.std_noise = 0; %noiseless test
+else
+% higher SNR, higher kPL regime more similar to Daniels et al NMR in Biomed
+expname = 'highSNR_highkPL';
+exp.R1P = 1/30;  exp.R1L =1/25;  exp.kPL = 0.1; exp.std_noise = 0.001; exp.Tarrival = 4; exp.Tbolus = 8;
+
+end
+% fitting parameters
 R1P_est = 1/30; R1L_est = 1/25; kPL_est = .02;
 R1P_lb = 1/40;  R1P_ub = 1/15;
 R1L_lb = 1/35;  R1L_ub = 1/15; % +- 10 s
@@ -86,7 +95,7 @@ for Ifit_params = 2%[2,6] %1:length(fit_params)  % choose which parameter combin
             end
         end
         
-        for flip_scheme = [1,4]% [1:4] % choose which flip angle scheme (flip_scheme) to apply
+        for flip_scheme = [1:4] % choose which flip angle scheme (flip_scheme) to apply
             
             clear flips_all flips
             
@@ -140,16 +149,18 @@ for Ifit_params = 2%[2,6] %1:length(fit_params)  % choose which parameter combin
                 fitting.NMC = 40; %fast testing option
             end
             
-            exp_desc = [func2str(fitting_model{Ifitting_model}) '_' fit_desc{Ifit_params} '_' flip_desc];
+            exp_desc = [expname '_' func2str(fitting_model{Ifitting_model}) '_' fit_desc{Ifit_params} '_' flip_desc];
             
             tic
-            [results(Ifit_params, Ifitting_model, flip_scheme) hdata hsim] = HP_montecarlo_evaluation( acq, fitting, exp );
+
+            [results, hfig ] = HP_montecarlo_evaluation_lactatetimes( acq, fitting, exp );
             toc
             
-            set(hsim,'Name', exp_desc);
             if ~quick_test
-                figure(hsim)
-                print([ exp_desc], '-dpdf')
+                set(hfig,'Name', exp_desc);
+                set(hfig, 'Position', [1000 918 1500 420])
+                figure(hfig)
+                print([ exp_desc '_lactatetime'], '-dpdf')
             end
             
         end
